@@ -1,9 +1,9 @@
 #pragma once
-#include "constexpr_array.h"
+#include<array>
 
 namespace constexpr_ {
 template<class T, size_t N>
-constexpr bool is_sorted(const array<T, N>& arr)
+constexpr bool is_sorted(const std::array<T, N>& arr)
 {
     for (size_t i = 0; i < N - 1; ++i)
         if (arr[i] > arr[i + 1])
@@ -66,25 +66,25 @@ constexpr void quick_sort_impl(T* const arr, size_t from, size_t to)
 }
 
 template<class T, size_t N>
-constexpr array<T, N> quick_sort(const array<T, N>& arr)
+constexpr std::array<T, N> quick_sort(const std::array<T, N>& arr)
 {
-    array<T, N> res{ arr };
-    quick_sort_impl(res.begin(), 0, res.size());
+    std::array<T, N> res{ arr };
+    quick_sort_impl(res.data(), 0, res.size());
     return res;
 }
 
 template<class T, size_t N>
-constexpr array<T, N> insertion_sort(const array<T, N>& arr)
+constexpr std::array<T, N> insertion_sort(const std::array<T, N>& arr)
 {
-    array<T, N> res{ arr };
-    insertion_sort_impl(res.begin(), 0, res.size());
+    std::array<T, N> res{ arr };
+    insertion_sort_impl(res.data(), 0, res.size());
     return res;
 }
 
 template<class T, size_t N>
-constexpr array<T, N> bubble_sort(const array<T, N>& arr)
+constexpr std::array<T, N> bubble_sort(const std::array<T, N>& arr)
 {
-    array<T, N> res{ arr };
+    std::array<T, N> res{ arr };
     for (size_t i = 0; i < N - 1; ++i)
         for (size_t j = i + 1; j < N; ++j)
             if (res[i] > res[j])
