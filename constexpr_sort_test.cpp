@@ -1,9 +1,10 @@
-#include "constexpr_sort.h"
 #include <iostream>
+#include "constexpr_array.h"
+#include "constexpr_sort.h"
 
 using namespace constexpr_;
-template<class T, size_t N>
-void print(const std::array<T, N>& arr) {
+template<class T, size_t N, template<class, size_t> class Array>
+void print(const Array<T, N>& arr) {
     for (const auto& x : arr)
         std::cout << x << ' ';
     std::cout << '\n';
