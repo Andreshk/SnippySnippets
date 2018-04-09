@@ -61,7 +61,7 @@ constexpr int foo(int x) {
 }
 static_assert(foo(4) == 8);
 ```
-Just like all the other examples above, `throw` is also forbidden in a `constexpr` function. However, the compiler is _allowed to_ (and **will**) ignore a `throw` expression if it is not evaluated during an actual compile-time computation. So, when `foo(4)` is called, `is_even(4)` is evaluated to true, the `throw` expression is _skipped_, and the code above compiles successfully. Trying to evaluate `static_assert(foo(5))` will try to evaluate the `throw` expression and - as if the exception turns into a compiler error exactly the desired behaviour.
+Just like all the other examples above, `throw` is also forbidden in a `constexpr` function. However, the compiler is _allowed to_ (and **will**) ignore a `throw` expression if it is not evaluated during an actual compile-time computation. So, when `foo(4)` is called, `is_even(4)` is evaluated to true, the `throw` expression is _skipped_, and the code above compiles successfully. Trying to evaluate `static_assert(foo(5))` will try to evaluate the `throw` expression, now causing a compiler error - exactly the desired behaviour.
 
 Of course, this trick has been known since the early C++11 days of single-statement `constexpr` functions. Still, it is an interesting, simple and straight-forward use case of "compile-time" exceptions, when `static_assert` is too strong, but the check _can be_ performed during compilation.
 
