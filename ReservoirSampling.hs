@@ -20,3 +20,8 @@ add s (RS gen k n values) = RS gen' k (n+1) values'
 
 samples :: ReservoirSampler a -> Vector a
 samples (RS _ _ _ values) = values
+
+{- Future reading (& to-do):
+http://had00b.blogspot.com/2013/07/random-subset-in-mapreduce.html
+https://erikerlandson.github.io/blog/2015/11/20/very-fast-reservoir-sampling/
+-}
