@@ -99,10 +99,9 @@ public:
     // In some .cpp:
     /*std::ostream& operator<<(std::ostream& os, const rational& rat) {
         os << rat.n() << '/' << rat.d() << ":\t";
-        auto boolToChar = [](const bool b) {return b ? '1' : '0'; };
         const uint32_t bar = (rat.bits >> 26) & 31U;
         for (int i = 31; i >= 0; --i) {
-            os << boolToChar(rat.bits&(1U << i));
+            os << ((rat.bits&(1U << i)) ? '1' : '0');
             if (i == 31 || i == 26 || (i == bar && i != 0))
                 os << ' ';
         }
