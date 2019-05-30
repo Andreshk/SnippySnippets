@@ -59,33 +59,24 @@ public:
         return N;
     }
 
-    // One-dimensional array operator[] accesses the values directly.
-    template <size_t N1 = N, typename = std::enable_if_t<N1 == 1>>
-    T& operator[](const size_t i) {
-        static_assert(N1 == N, "Do not use 'foo.operator[]<N>(bar)' syntax!");
+    // One-dimensional array operator[] accesses the values directly and returns T& or const T&.
+    // Multi-dimensional array operator[] creates (!) a new ArrayView<T,N-1> or ArrayView<const T,N-1>.
+    decltype(auto) operator[](const size_t i) {
         vassert(i < size());
-        return ptr[i];
+        if constexpr (N == 1) {
+            return ptr[i];
+        } else {
+            const size_t subDimSize = product(sizes, 1);
+            return ArrayView<T, N - 1>{ ptr + i*subDimSize, subarray(sizes) };
+        }
     }
-    template <size_t N1 = N, typename = std::enable_if_t<N1 == 1>>
-    const T& operator[](const size_t i) const {
-        static_assert(N1 == N, "Do not use 'foo.operator[]<N>(bar)' syntax!");
+    decltype(auto) operator[](const size_t i) const {
         vassert(i < size());
-        return ptr[i];
-    }
-
-    // Multi-dimensional array operator[] creates (!) a new array view of the requested subarray.
-    template <size_t N1 = N, typename = std::enable_if_t<N1 != 1>>
-    ArrayView<T, N - 1> operator[](const size_t i) {
-        static_assert(N1 == N, "Do not use 'foo.operator[]<N>(bar)' syntax!");
-        vassert(i < size());
-        const size_t subDimSize = product(sizes, 1);
-        return { ptr + i*subDimSize, subarray(sizes) };
-    }
-    template <size_t N1 = N, typename = std::enable_if_t<N1 != 1>>
-    ArrayView<const T, N - 1> operator[](const size_t i) const {
-        static_assert(N1 == N, "Do not use 'foo.operator[]<N>(bar)' syntax!");
-        vassert(i < size());
-        const size_t subDimSize = product(sizes, 1);
-        return { ptr + i*subDimSize, subarray(sizes) };
+        if constexpr (N == 1) {
+            return reinterpret_cast<const T&>(ptr[i]);
+        } else {
+            const size_t subDimSize = product(sizes, 1);
+            return ArrayView<const T, N - 1>{ ptr + i*subDimSize, subarray(sizes) };
+        }
     }
 };
