@@ -99,7 +99,7 @@ public:
 };
 
 // An owning multi-dimensional array - same as an ArrayView, with the exception
-// that constructing and destructing allocated and deallocates memory.
+// that constructing and destructing allocates and deallocates memory.
 template <typename T, size_t N = 1>
 class Array : public ArrayView<T, N> {
 public:
