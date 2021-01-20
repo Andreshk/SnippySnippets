@@ -54,7 +54,7 @@ topoSort g = evalState (foldM helper (Just []) [0..n-1]) (replicate n White)
                 helper (Just res) v = do
                     colors <- get
                     case colors !! v of White -> dfsVisit v res
-                                        Gray -> return Nothing -- намерен е цикъл
+                                        Gray -> return Nothing -- cycle found
                                         Black -> return (Just res)
 
 -- for_ :: (Foldable t, Applicative f) => t a -> (a -> f b) -> f ()
@@ -82,7 +82,7 @@ topoSort' g = snd <$> execState (for_ [0..n-1] tryDFSVisit) (Just (replicate n W
             for_ (neighbs u g) $ \v ->
                 onValidState (\(colors, _) ->
                     case colors !! v of White -> dfsVisit v
-                                        Gray -> put Nothing -- намерен е цикъл
+                                        Gray -> put Nothing -- cycle found
                                         Black -> return ())
             modify $ fmap (\(colors, res) -> (update u Black colors, u:res))
 
@@ -95,8 +95,8 @@ foo x = do
         put $ Just (fromJust st + x) -- ugly
 
 bar :: Int -> State (Maybe Int) ()
-bar x =  get >>= \case Nothing -> return ()
-                       Just v -> do put $ Just (v + x)
+bar x = get >>= \case Nothing -> return ()
+                      Just v -> do put $ Just (v + x)
 
 baz :: Int -> State (Maybe Int) ()
 baz x = get >>= traverse_ (\v -> do put $ Just (v + x)) -- we traverse the Maybe (!)
