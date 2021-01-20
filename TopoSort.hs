@@ -60,30 +60,33 @@ topoSort g = evalState (foldM helper (Just []) [0..n-1]) (replicate n White)
 -- for_ :: (Foldable t, Applicative f) => t a -> (a -> f b) -> f ()
 -- Maps each element to an action, evaluates actions left to right & discards the results
 
--- The "get >>= traverse_" combination receives a pure function and applies it to the state only
--- if it's non-empty. This check is obviously required, in one way or another, at every iteration.
+-- This function takes care of extracting a Maybe from the state and calling the supplied
+-- "pure" function on the contents of the Maybe, if any (i.e. if the state is "valid").
+-- This check is obviously required, in one way or another, at every iteration.
 -- Ideally, we'd like to do "Just ... <- get" and have it fail silently - but State is not in MonadFail.
+onValidState :: (a -> State (Maybe a) ()) -> State (Maybe a) ()
+onValidState f = get >>= traverse_ f
 
 topoSort' :: Graph -> Maybe [Int]
 topoSort' g = snd <$> execState (for_ [0..n-1] tryDFSVisit) (Just (replicate n White, []))
   where n = graphSize g
         tryDFSVisit :: Int -> State (Maybe ([Color],[Int])) ()
         tryDFSVisit u = 
-            get >>= traverse_ (\(colors, _) -> case colors !! u of White -> dfsVisit u
-                                                                   Gray -> error "This shouldn't happen"
-                                                                   Black -> return ())
+            onValidState (\(colors, _) -> case colors !! u of White -> dfsVisit u
+                                                              Gray -> error "This shouldn't happen"
+                                                              Black -> return ())
+        -- The state is assumed valid before calling this (otherwise it's just unefficient)
         dfsVisit :: Int -> State (Maybe ([Color],[Int])) ()
-        dfsVisit u = 
-            get >>= traverse_ (const $ do
-                modify $ fmap (\(colors, res) -> (update u Gray colors, res))
-                for_ (neighbs u g) $ \v ->
-                    get >>= traverse_ (\(colors, _) ->
-                        case colors !! v of White -> dfsVisit v
-                                            Gray -> put Nothing -- намерен е цикъл
-                                            Black -> return ())
-                modify $ fmap (\(colors, res) -> (update u Black colors, u:res)))
+        dfsVisit u = do
+            modify $ fmap (\(colors, res) -> (update u Gray colors, res))
+            for_ (neighbs u g) $ \v ->
+                onValidState (\(colors, _) ->
+                    case colors !! v of White -> dfsVisit v
+                                        Gray -> put Nothing -- намерен е цикъл
+                                        Black -> return ())
+            modify $ fmap (\(colors, res) -> (update u Black colors, u:res))
 
--- The following three functions are equivalent.
+-- The following four functions are equivalent.
 -- Note that the do-block serves as a placeholder for a larger one.
 foo :: Int -> State (Maybe Int) ()
 foo x = do
@@ -92,18 +95,24 @@ foo x = do
         put $ Just (fromJust st + x) -- ugly
 
 bar :: Int -> State (Maybe Int) ()
-bar x = 
-    get >>= \case Nothing -> return ()
-                  Just v -> do put $ Just (v + x)
+bar x =  get >>= \case Nothing -> return ()
+                       Just v -> do put $ Just (v + x)
 
 baz :: Int -> State (Maybe Int) ()
-baz x = 
-    get >>= traverse_ (\v -> do put $ Just (v + x)) -- we traverse the Maybe (!)
+baz x = get >>= traverse_ (\v -> do put $ Just (v + x)) -- we traverse the Maybe (!)
+
+gaz :: Int -> State (Maybe Int) ()
+gaz x = onValidState (\v -> do put $ Just (v + x))
 
 testFoo :: Bool
 testFoo = execState (foo 2) (Just 3) == (Just 5)
        && execState (bar 2) (Just 3) == (Just 5)
        && execState (baz 2) (Just 3) == (Just 5)
+       && execState (gaz 2) (Just 3) == (Just 5)
+       && execState (foo 2) Nothing == Nothing
+       && execState (bar 2) Nothing == Nothing
+       && execState (baz 2) Nothing == Nothing
+       && execState (gaz 2) Nothing == Nothing
        && topoSort g == Just [2,1,5,0,3,4]
        && topoSort' g == Just [2,1,5,0,3,4]
        && topoSort g' == Nothing
