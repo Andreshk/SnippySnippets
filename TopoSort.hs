@@ -3,23 +3,16 @@ import Graph
 import Control.Monad.State (StateT,execStateT,get,modify,lift)
 import Data.Foldable (for_)
 import Data.Vector (Vector,fromList,(!),(//))
-import qualified Data.Vector as V (length,replicate,elem)
+import qualified Data.Vector as V (length,replicate,elem,modify)
+import Data.Vector.Mutable (write)
 import Test.HUnit (Test(TestList),runTestTT,(~:),(~?=))
-
--- A graph with an unique topological ordering: 2 1 5 0 3 4
--- It is unique due to it being a Hamiltonian path, i.e. no two vertices can be swapped.
-g :: Graph
-g = makeGraphE [(0,3),(0,4),(1,0),(1,3),(1,5),(2,1),(2,5),(3,4),(5,0),(5,4)]
--- Minimal graph with a cycle
-g' :: Graph
-g' = makeGraphE [(0,1),(1,0)]
 
 -- Vertices are colored during DFS to mark their state (unvisited/in process/visited)
 data Color = White | Gray | Black
 
--- Updating immutable vectors is actually as slow as updating lists
+-- Destructively update a vector (may be performed in-place)
 update :: Int -> a -> Vector a -> Vector a
-update idx val v = v // [(idx, val)]
+update idx val v = V.modify (\mv -> write mv idx val) v
 
 -- The most accurate representation of this process is StateT (<the actual state>) Maybe,
 -- i.e. a function that receives its arguments + state & may fail returning the value-new state pair.
@@ -57,6 +50,12 @@ topoSortTests = TestList [
     "The sorting is valid" ~: topoSort g `isValidSortFor` g ~?= True,
     "No sorting, minimal case" ~: topoSort g' ~?= Nothing
     ]
+  where -- A graph with an unique topological ordering: 2 1 5 0 3 4
+        -- It is unique due to it being a Hamiltonian path, i.e. no two vertices can be swapped.
+        g, g' :: Graph
+        g = makeGraphE [(0,3),(0,4),(1,0),(1,3),(1,5),(2,1),(2,5),(3,4),(5,0),(5,4)]
+        -- Minimal graph with a cycle
+        g' = makeGraphE [(0,1),(1,0)]
 
 main :: IO ()
 main = do
