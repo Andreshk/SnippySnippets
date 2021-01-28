@@ -38,33 +38,35 @@ update idx val v = v // [(idx, val)]
 -- i.e. a function that receives its arguments + state & may fail returning the value-new state pair.
 -- We also get MonadFail for free - this gives us the ability to pattern-match the result from get
 -- and the possibility for this match to fail if an earlier call returned Nothing.
-topoSort :: Graph -> Maybe [Int]
-topoSort g = snd <$> execStateT (for_ [0..n-1] tryDFSVisit) (V.replicate n White, [])
+topoSort :: Graph -> Maybe (Vector Int)
+topoSort g = getSnd <$> execStateT (for_ [0..n-1] tryDFSVisit)
+                                   (V.replicate n White, V.replicate n 0, n-1)
   where n = graphSize g
-        tryDFSVisit :: Int -> StateT (Vector Color,[Int]) Maybe ()
+        getSnd (_,x,_) = x
+        tryDFSVisit :: Int -> StateT (Vector Color, Vector Int, Int) Maybe ()
         tryDFSVisit u = do
-            (colors, _) <- get
+            (colors, _, _) <- get
             case colors ! u of White -> dfsVisit u
                                Gray -> error "This shouldn't happen"
                                Black -> return ()
-        dfsVisit :: Int -> StateT (Vector Color,[Int]) Maybe ()
+        dfsVisit :: Int -> StateT (Vector Color, Vector Int, Int) Maybe ()
         dfsVisit u = do
-            modify $ \(colors, res) -> (update u Gray colors, res)
+            modify $ \(colors, res, idx) -> (update u Gray colors, res, idx)
             for_ (neighbs u g) $ \v -> do
-                (colors, _) <- get
+                (colors, _, _) <- get
                 case colors ! v of White -> dfsVisit v
                                    Gray -> lift Nothing -- cycle found
                                    Black -> return ()
-            modify $ \(colors, res) -> (update u Black colors, u:res)
+            modify $ \(colors, res, idx) -> (update u Black colors, update idx u res, idx-1)
 
-isValidSortFor :: Maybe [Int] -> Graph -> Bool
+isValidSortFor :: Maybe (Vector Int) -> Graph -> Bool
 isValidSortFor Nothing _ = False
 isValidSortFor (Just lst) g = not $ any (\(u,v) -> u `V.elem` (neighbs v g)) pairs
-  where pairs = [ (lst!!i, lst!!j) | let n = graphSize g, i<-[0..n-2], j<-[i+1..n-1] ]
+  where pairs = [ (lst!i, lst!j) | let n = graphSize g, i<-[0..n-2], j<-[i+1..n-1] ]
 
 tests :: Test
 tests = TestList [
-    "Has unique sorting" ~: topoSort g ~?= Just [2,1,5,0,3,4],
+    "Has unique sorting" ~: topoSort g ~?= Just (fromList [2,1,5,0,3,4]),
     "The sorting is valid" ~: topoSort g `isValidSortFor` g ~?= True,
     "No sorting, minimal case" ~: topoSort g' ~?= Nothing
     ]
