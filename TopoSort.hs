@@ -1,44 +1,23 @@
-module TopoSort (Graph,topoSort) where
+module TopoSort (topoSort) where
+import Graph
 import Control.Monad.State (StateT,execStateT,get,modify,lift)
 import Data.Foldable (for_)
-import Data.Vector (Vector,fromList,(!),(//),slice)
+import Data.Vector (Vector,fromList,(!),(//))
 import qualified Data.Vector as V (length,replicate,elem)
 import Test.HUnit (Test(TestList),runTestTT,(~:),(~?=))
-
--- A graph is represented via adjacency lists, laid out consecutively in memory
--- (i.e. in the first vector). The second Vector is used for indexing: the neighbours
--- of each vertex u are in the subrange [idxs!u; idxs!(u+1)) in the first vector.
--- The graph size can then be inferred from the index vector's size.
-data Graph = Graph (Vector Int) (Vector Int)
-makeGraph :: [[Int]] -> Graph
-makeGraph adjLst = Graph (fromList $ concat adjLst)
-                         (fromList $ scanl (\len l -> len + length l) 0 adjLst)
 
 -- A graph with an unique topological ordering: 2 1 5 0 3 4
 -- It is unique due to it being a Hamiltonian path, i.e. no two vertices can be swapped.
 g :: Graph
-g = makeGraph
-    [[3,4]
-    ,[0,3,5]
-    ,[1,5]
-    ,[4]
-    ,[]
-    ,[0,4]]
+g = makeGraphE [(0,3),(0,4),(1,0),(1,3),(1,5),(2,1),(2,5),(3,4),(5,0),(5,4)]
 -- Minimal graph with a cycle
 g' :: Graph
-g' = makeGraph [[1],[0]]
+g' = makeGraphE [(0,1),(1,0)]
 
--- Vector length is O(1), as expected
-graphSize :: Graph -> Int
-graphSize (Graph _ idxs) = length idxs - 1
--- Obtaining the subrange for a given vertex is also a O(1) operation
-neighbs :: Int -> Graph -> Vector Int
-neighbs u g | u >= graphSize g = error "Invalid vertex index!"
-neighbs u (Graph adjLst idxs) = slice uIdx (vIdx - uIdx) adjLst
-  where uIdx = idxs!u; vIdx = idxs!(u+1)
-
+-- Vertices are colored during DFS to mark their state (unvisited/in process/visited)
 data Color = White | Gray | Black
 
+-- Updating immutable vectors is actually as slow as updating lists
 update :: Int -> a -> Vector a -> Vector a
 update idx val v = v // [(idx, val)]
 
@@ -69,16 +48,8 @@ topoSort g = getSnd <$> execStateT (for_ [0..n-1] tryDFSVisit)
 
 isValidSortFor :: Maybe (Vector Int) -> Graph -> Bool
 isValidSortFor Nothing _ = False
-isValidSortFor (Just lst) g = not $ any (\(u,v) -> u `V.elem` (neighbs v g)) pairs
+isValidSortFor (Just lst) g = not $ any (\(u,v) -> u `elem` (neighbs v g)) pairs
   where pairs = [ (lst!i, lst!j) | let n = graphSize g, i<-[0..n-2], j<-[i+1..n-1] ]
-
-graphTests :: [[Int]] -> Test
-graphTests adjLst = TestList [
-    "Correct length" ~: graphSize testG ~?= length adjLst,
-    "Correct neighbours lists" ~:
-        all (\u -> neighbs u testG == fromList (adjLst !! u)) [0..length adjLst - 1] ~?= True
-    ]
-  where testG = makeGraph adjLst
 
 topoSortTests :: Test
 topoSortTests = TestList [
@@ -89,6 +60,6 @@ topoSortTests = TestList [
 
 main :: IO ()
 main = do
-    runTestTT $ graphTests [[1,2,3],[0],[1,3],[]]
+    runTestTT graphTests
     runTestTT topoSortTests
     return ()
