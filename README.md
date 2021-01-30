@@ -9,3 +9,5 @@ Sorts by splitting the input into pieces, sorting the pieces individually (and s
 A classic, simple algorithm (or, rather, a data structure called a 'sampler') for randomly choosing a fixed (typically, small) number of values from a stream of unknown, possibly infinite size, in such a way that every value, added to the sampler, has the same probability of being sampled. This guarantee holds at every point in time, regardless of the number of values already added to a sampler.
 ### [Graph](https://github.com/Andreshk/SnippySnippets/blob/master/Graph.hs), [TopoSort](https://github.com/Andreshk/SnippySnippets/blob/master/TopoSort.hs)
 Topological sorting (based on depth-first search), implemented in Haskell using the State monad (and Vector-s for a small performance gain).
+### [VectorTest](https://github.com/Andreshk/SnippySnippets/blob/master/VectorTest.hs)
+Some experiments with mutable vectors in Haskell
