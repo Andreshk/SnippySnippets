@@ -18,9 +18,12 @@ shuffle gen vector = V.modify (loop gen (V.length vector)) vector
 
 -- Runs the Fisher-Yates shuffle k times on a vector of length n
 testShuffle :: Int -> Int -> IO ()
-testShuffle k n = replicateM_ k $ do
-    gen <- newStdGen
-    print $ shuffle gen $ V.enumFromN 1 n
+testShuffle k n = do
+    when (n > 20) $
+        putStrLn "Warning: the 64-bit precision of StdGen is not enough to generate all permutations!"
+    replicateM_ k $ do
+        gen <- newStdGen
+        print $ shuffle gen $ V.enumFromN 1 n
 
 -- M.IOVector cannot be an instance of Show,
 -- since accessing (incl. freezing) it is in the IO monad.
