@@ -2,9 +2,10 @@
 module ReservoirSampling where
 
 import Control.Monad (when,replicateM,replicateM_)
-import Control.Monad.Primitive (PrimMonad,PrimState)
-import Control.Monad.ST (ST, runST)
+import Control.Monad.Primitive (PrimMonad,PrimState,stToPrim)
+import Control.Monad.ST (runST)
 import Data.Foldable (forM_)
+import Data.STRef (STRef,newSTRef,readSTRef,writeSTRef)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Vector.Mutable (MVector)
@@ -17,16 +18,19 @@ import System.Random (StdGen,random,newStdGen)
 
 -- This is an optimized implementation of the "slow" O(n) Algorithm R.
 -- The currently sampled values are kept in a mutable vector, frozen only
--- when accessed. Also keeps its state in a mutable vector of size 1, to
+-- when accessed. Also keeps its state via a mutable reference, to
 -- achieve the same workflows for the sampler as a mutable vector itself.
-data ReservoirSampler s a = RS {  state :: MVector s (StdGen, Int)
+data ReservoirSampler s a = RS {  state :: STRef s (StdGen, Int)
                                , values :: MVector s a }
+-- User-friendly type aliases
+type IOReservoirSampler   = ReservoirSampler (PrimState IO)
+type STReservoirSampler s = ReservoirSampler s
 
 -- Initializes a sampler's state & allocates memory for the values to be added
 newSamplerM :: PrimMonad m => StdGen -> Int -> m (ReservoirSampler (PrimState m) a)
 newSamplerM gen k = do
     -- Invariant: the Int in the state is the 1-based index of the next value to be added.
-    st <- M.replicate 1 (gen, 1)
+    st <- stToPrim $ newSTRef (gen, 1)
     values <- M.new k
     return $ RS st values
 
@@ -34,11 +38,11 @@ newSamplerM gen k = do
 addSampleM :: PrimMonad m => ReservoirSampler (PrimState m) a -> a -> m ()
 addSampleM RS{ state, values } val = do
     let k = M.length values
-    (gen, i) <- M.read state 0
+    (gen, i) <- stToPrim $ readSTRef state
     if i <= k
     then do -- First k values are always selected
         M.write values (i-1) val
-        M.write state 0 (gen, i+1)
+        stToPrim $ writeSTRef state (gen, i+1)
     else do
         let prob = (fromIntegral k) / (fromIntegral i) -- Probability of keeping this i-th sample
             (x, gen') = random gen :: (Float, StdGen)
@@ -46,7 +50,7 @@ addSampleM RS{ state, values } val = do
             -- select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
             let idx = floor $ x*(fromIntegral k)/prob
             M.write values idx val
-        M.write state 0 (gen', i+1)
+        stToPrim $ writeSTRef state (gen', i+1)
 
 -- Freezes the vector of currently selected k values
 -- (safely or unsafely) and returns them as an immutable vector.
@@ -59,7 +63,7 @@ getSamplesImpl :: PrimMonad m =>
     (MVector (PrimState m) a -> m (Vector a)) -> ReservoirSampler (PrimState m) a -> m (Vector a)
 getSamplesImpl getter RS{ state, values } = do
     let k = M.length values
-    (_, i) <- M.read state 0
+    (_, i) <- stToPrim $ readSTRef state
     when (i <= k) $ error "Too few samples!"
     return =<< getter values
 
@@ -73,7 +77,7 @@ reservoirSample gen k n = runST $ do
     forM_ [0..n-1] $ addSampleM sampler
     return =<< unsafeGetSamplesM sampler
 
--- Same as above, but using the built-in global generator (split for sunsequent usage).
+-- Same as above, but using the built-in global generator (split for subsequent usage).
 reservoirSampleIO :: Int -> Int -> IO (Vector Int)
 reservoirSampleIO k n = do
     gen <- newStdGen
@@ -108,7 +112,8 @@ testReservoirDistr reps n = do
     print histo
     putStrLn $ "Variance: " ++ show var ++ " (expected ~" ++ show expVar ++ ")"
 
--- A similar idea for reservior sampling, with roughly the same execution, but more explicit state keeping
+-- A similar idea for reservoir sampling, with roughly the same execution,
+-- but much less generic & with more explicit state keeping.
 reservoirSample' :: StdGen -> Int -> Int -> Vector Int
 reservoirSample' gen k n
   | k >= n    = V.enumFromN 0 n -- Probably an error?
@@ -123,12 +128,6 @@ reservoirSample' gen k n
                 let idx = floor $ x*(fromIntegral k)/prob
                 M.write v idx i
             loop gen' (i+1) v
-
--- Use the builtin random generator for sampling instead of a provided one
-reservoirSampleIO' :: Int -> Int -> IO (Vector Int)
-reservoirSampleIO' k n = do
-    gen <- newStdGen
-    return $ reservoirSample gen k n
 
 {- Future reading (& to-do):
 http://had00b.blogspot.com/2013/07/random-subset-in-mapreduce.html
