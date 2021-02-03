@@ -1,5 +1,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
-module ReservoirSampling where
+module ReservoirSampling
+  (ReservoirSampler, IOReservoirSampler, STReservoirSampler,
+   newSamplerM, addSampleM, getSamplesM, unsafeGetSamplesM,
+   reservoirSample, reservoirSampleIO, testReservoirDistr) where
 
 import Control.Monad (when,replicateM,replicateM_)
 import Control.Monad.Primitive (PrimMonad,PrimState,stToPrim)
@@ -47,7 +50,7 @@ addSampleM RS{ state, values } val = do
         let prob = (fromIntegral k) / (fromIntegral i) -- Probability of keeping this i-th sample
             (x, gen') = random gen :: (Float, StdGen)
         when (x < prob) $ do
-            -- select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
+            -- Select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
             let idx = floor $ x*(fromIntegral k)/prob
             M.write values idx val
         stToPrim $ writeSTRef state (gen', i+1)
@@ -91,7 +94,6 @@ testReservoir reps k n = replicateM_ reps $ print =<< reservoirSampleIO k n
 -- (i.e. to select all but one value) and for each value check how many times
 -- it was missing. This forms a pribability distribution function, whose variance
 -- we calculate & compare to the variance of a fair n-sided die (ideal distribution).
--- To-do: maybe there's a better evaluation, f.e. standard or root mean square deviation.
 testReservoirDistr :: Int -> Int -> IO ()
 testReservoirDistr reps n = do
     putStrLn $ "Histogram of " ++ show (reps*n) ++ " samples from [0;" ++ show n ++ "):"
@@ -130,6 +132,9 @@ reservoirSample' gen k n
             loop gen' (i+1) v
 
 {- Future reading (& to-do):
-http://had00b.blogspot.com/2013/07/random-subset-in-mapreduce.html
-https://erikerlandson.github.io/blog/2015/11/20/very-fast-reservoir-sampling/
+- A possible better evaluation of the sampling, f.e. standard or root mean square deviation
+- Algorithm L (also see if it's the same as the "very fast" algorithm below)
+- Weighted sampling (possibly algorithm A-Chao from the Wikipedia article)
+- http://had00b.blogspot.com/2013/07/random-subset-in-mapreduce.html for when k is too big
+- https://erikerlandson.github.io/blog/2015/11/20/very-fast-reservoir-sampling/
 -}
