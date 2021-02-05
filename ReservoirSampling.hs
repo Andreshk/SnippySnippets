@@ -39,9 +39,9 @@ type STReservoirSampler s = ReservoirSampler s
 newSamplerM :: PrimMonad m => StdGen -> Int -> m (ReservoirSampler (PrimState m) a)
 newSamplerM gen k = do
     -- Invariant: the Int in the state is the 1-based index of the next value to be added.
-    st <- stToPrim $ newSTRef (gen, 1)
+    state <- stToPrim $ newSTRef (gen, 1)
     values <- M.new k
-    return $ RS st values
+    return $ RS state values
 
 -- Adds a value to the sampler, modifying in-place both the inner array and the value's state.
 addSampleM :: PrimMonad m => ReservoirSampler (PrimState m) a -> a -> m ()
@@ -96,16 +96,15 @@ reservoirSampleIO k n = do
 testReservoir :: Int -> Int -> Int -> IO ()
 testReservoir reps k n = replicateM_ reps $ print =<< reservoirSampleIO k n
 
--- Evaluate the reservoir sampling algorithm by running it a given number of times
--- and counting how often each value was present in the sample. We normalize these
--- counts to form a probability distribution function, whose variance we calculate
--- and compare to the variance of a fair n-sided die (ideal distribution).
-testReservoirDistr :: Int -> Int -> Int -> IO ()
-testReservoirDistr reps k n = do
-    putStrLn $ "Histogram of " ++ show reps ++ " samples for k="
-                ++ show k ++ " from [0;" ++ show n ++ "):"
-    samples <- replicateM reps $ reservoirSampleIO k n
-    let xs = [0..n-1]
+-- Evaluates the results from multiple runs of a reservoir sampler by counting
+-- how often each value was present in a sample. These counts are normalized
+-- to form a probability distribution function, whose variance is calculated
+-- and compared to the variance of a fair n-sided die (ideal distribution).
+compareToUniformDistr :: Int -> [Vector Int] -> IO ()
+compareToUniformDistr n samples = do
+    let reps = length samples
+        k = V.length $ head samples
+        xs = [0..n-1]
         histo = [ length . filter (elem x) $ samples | x<-xs ]
         -- Each x has an equal probability of k/n to be in the sample (making 1/n when normalized)
         probs = [ count % (reps*k) | count<-histo ]
@@ -116,8 +115,17 @@ testReservoirDistr reps k n = do
         expVar = (n*n-1) % 12
     when (abs (sum probs - 1) > 1e-6 || any (<0) probs || any (>1) probs) $
         error "Invalid probabilities!"
+    putStrLn $ "Histogram of " ++ show reps ++ " samples for k="
+                ++ show k ++ " from [0;" ++ show n ++ "):"
     putStrLn $ show histo ++ " (expected ~" ++ show (reps * k % n) ++ ")"
     putStrLn $ "Variance: " ++ show var ++ " (expected ~" ++ show expVar ++ ")"
+
+-- Runs a simple, general case of unweighted reservoir
+-- sampling & evaluates the resulting distribution.
+testReservoirDistr :: Int -> Int -> Int -> IO ()
+testReservoirDistr reps k n = do
+    samples <- replicateM reps $ reservoirSampleIO k n
+    compareToUniformDistr n samples
 
 -- Weighted reservoir sampling - Wikipedia's flawed (!) version of
 -- Chao's algorithm. Roughly the same execution as the main algorithm,
@@ -149,11 +157,9 @@ weightedReservoirSampleIO k weights = do
 -- weights are identical (regardless if they add up to 1 or not).
 testWeighted :: Int -> Int -> Int -> IO ()
 testWeighted reps k n = do
-    let xs = [0..n-1]
-        weights = replicate n $ 1%n
-    res <- replicateM reps $ weightedReservoirSampleIO k weights
-    let histo = [ length . filter (elem x) $ res | x<-xs ]
-    print histo
+    let weights = replicate n (1%n)
+    samples <- replicateM reps $ weightedReservoirSampleIO k weights
+    compareToUniformDistr n samples
 
 {- Future reading (& to-do):
 - A possible better evaluation of the sampling, f.e. standard or root mean square deviation
