@@ -85,7 +85,7 @@ reservoirSample gen k n = runST $ do
 reservoirSampleIO :: Int -> Int -> IO (Vector Int)
 reservoirSampleIO k n = do
     gen <- newStdGen
-    return $ reservoirSample' gen k n
+    return $ reservoirSample gen k n
 
 -- Repeated reservoir sampling, mainly for testing purposes
 testReservoir :: Int -> Int -> Int -> IO ()
