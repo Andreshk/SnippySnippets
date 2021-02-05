@@ -16,6 +16,11 @@ import Data.Vector.Mutable (MVector)
 import qualified Data.Vector.Mutable as M
 import System.Random (StdGen,random,newStdGen)
 
+-- Utility function to take care of division between integer values
+(%) :: (Integral a, Fractional b) => a -> a -> b
+(%) = (/) `on` fromIntegral
+infixl 7 % -- Same as (/)
+
 -- A reservoir sampler selects k values from a stream of an initially unknown, possibly
 -- huge size n in O(k) space, with a single pass over the stream, so that at any point
 -- each "consumed" value has an equal probability of being selected.
@@ -48,7 +53,7 @@ addSampleM RS{ state, values } val = do
         M.write values (i-1) val
         stToPrim $ writeSTRef state (gen, i+1)
     else do
-        let prob = (fromIntegral k) / (fromIntegral i) -- Probability of keeping this i-th sample
+        let prob = k % i -- Probability of keeping this i-th sample
             (x, gen') = random gen :: (Float, StdGen)
         when (x < prob) $ do
             -- Select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
@@ -91,11 +96,6 @@ reservoirSampleIO k n = do
 testReservoir :: Int -> Int -> Int -> IO ()
 testReservoir reps k n = replicateM_ reps $ print =<< reservoirSampleIO k n
 
--- Utility function to take care of division between integer values
-(%) :: (Integral a, Fractional b) => a -> a -> b
-(%) = (/) `on` fromIntegral
-infixl 7 % -- Same as (/)
-
 -- Evaluate the reservoir sampling algorithm by running it a given number of times
 -- and counting how often each value was present in the sample. We normalize these
 -- counts to form a probability distribution function, whose variance we calculate
@@ -119,22 +119,41 @@ testReservoirDistr reps k n = do
     putStrLn $ show histo ++ " (expected ~" ++ show (reps * k % n) ++ ")"
     putStrLn $ "Variance: " ++ show var ++ " (expected ~" ++ show expVar ++ ")"
 
--- A similar idea for reservoir sampling, with roughly the same execution,
+-- Weighted reservoir sampling - Wikipedia's flawed (!) version of
+-- Chao's algorithm. Roughly the same execution as the main algorithm,
 -- but much less generic & with more explicit state keeping.
-reservoirSample' :: StdGen -> Int -> Int -> Vector Int
-reservoirSample' gen k n
-  | k >= n    = V.enumFromN 0 n -- Probably an error?
-  | otherwise = V.modify (loop gen k) $ V.enumFromN 0 k -- First k are always selected
-  where -- Invariant: i is the next value to be sampled (making it the i+1-th)
-        loop :: PrimMonad m => StdGen -> Int -> MVector (PrimState m) Int -> m()
-        loop gen i v = when (i < n) $ do
-            let prob = (fromIntegral k) / (fromIntegral (i+1)) -- Probability of keeping this sample
+weightedReservoirSample :: StdGen -> Int -> [Float] -> Vector Int
+weightedReservoirSample gen k weights
+  | length first < k = error "Too few samples"
+  | otherwise        = V.modify (loop gen k (sum first) rest) $ V.enumFromN 0 k -- First k are always selected
+  where (first,rest) = splitAt k weights
+        loop :: PrimMonad m => StdGen -> Int -> Float -> [Float] -> MVector (PrimState m) Int -> m ()
+        loop _ _ _ [] _ = return ()
+        loop gen i wSum (w:ws) mv = do
+            let wSum' = wSum + w
+                prob = w / wSum' -- Probability of keeping this sample (!)
                 (x, gen') = random gen :: (Float, StdGen)
             when (x < prob) $ do
                 -- extrapolate from [0;prob) to [0;k) to select the index of a value to overwrite
                 let idx = floor $ x*(fromIntegral k)/prob
-                M.write v idx i
-            loop gen' (i+1) v
+                M.write mv idx i
+            loop gen' (i+1) wSum' ws mv
+
+-- Analogous to reservoirSampleIO
+weightedReservoirSampleIO :: Int -> [Float] -> IO (Vector Int)
+weightedReservoirSampleIO k weights = do
+    gen <- newStdGen
+    return $ weightedReservoirSample gen k weights
+
+-- Chao's algorithm is supposed to match the regular one when all the
+-- weights are identical (regardless if they add up to 1 or not).
+testWeighted :: Int -> Int -> Int -> IO ()
+testWeighted reps k n = do
+    let xs = [0..n-1]
+        weights = replicate n $ 1%n
+    res <- replicateM reps $ weightedReservoirSampleIO k weights
+    let histo = [ length . filter (elem x) $ res | x<-xs ]
+    print histo
 
 {- Future reading (& to-do):
 - A possible better evaluation of the sampling, f.e. standard or root mean square deviation
