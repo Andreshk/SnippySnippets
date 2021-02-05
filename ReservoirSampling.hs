@@ -8,6 +8,7 @@ import Control.Monad (when,replicateM,replicateM_)
 import Control.Monad.Primitive (PrimMonad,PrimState,stToPrim)
 import Control.Monad.ST (runST)
 import Data.Foldable (forM_)
+import Data.Function (on)
 import Data.STRef (STRef,newSTRef,readSTRef,writeSTRef)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
@@ -90,28 +91,32 @@ reservoirSampleIO k n = do
 testReservoir :: Int -> Int -> Int -> IO ()
 testReservoir reps k n = replicateM_ reps $ print =<< reservoirSampleIO k n
 
--- Evaluate the reservoir sampling algorithm by running it many times with k=n-1
--- (i.e. to select all but one value) and for each value check how many times
--- it was missing. This forms a pribability distribution function, whose variance
--- we calculate & compare to the variance of a fair n-sided die (ideal distribution).
-testReservoirDistr :: Int -> Int -> IO ()
-testReservoirDistr reps n = do
-    putStrLn $ "Histogram of " ++ show (reps*n) ++ " samples from [0;" ++ show n ++ "):"
-    samples <- replicateM (reps*n) $ reservoirSampleIO (n-1) n
+-- Utility function to take care of division between integer values
+(%) :: (Integral a, Fractional b) => a -> a -> b
+(%) = (/) `on` fromIntegral
+infixl 7 % -- Same as (/)
+
+-- Evaluate the reservoir sampling algorithm by running it a given number of times
+-- and counting how often each value was present in the sample. We normalize these
+-- counts to form a probability distribution function, whose variance we calculate
+-- and compare to the variance of a fair n-sided die (ideal distribution).
+testReservoirDistr :: Int -> Int -> Int -> IO ()
+testReservoirDistr reps k n = do
+    putStrLn $ "Histogram of " ++ show reps ++ " samples for k="
+                ++ show k ++ " from [0;" ++ show n ++ "):"
+    samples <- replicateM reps $ reservoirSampleIO k n
     let xs = [0..n-1]
-        -- For each i, the number of samples with missing i
-        histo = [ length $ filter (not.(elem x)) samples | x<-xs ]
-        -- Normalize the histogram to represent the probability mass function over [0..n-1]
-        probs = let denom = fromIntegral (reps*n) in [ fromIntegral v / denom | v<-histo ]
-        -- Mean of [0..n-1]
-        mean = fromIntegral (n-1) / 2 :: Float
+        histo = [ length . filter (elem x) $ samples | x<-xs ]
+        -- Each x has an equal probability of k/n to be in the sample (making 1/n when normalized)
+        probs = [ count % (reps*k) | count<-histo ]
         -- Variance of the results
-        var = sum [ (probs !! x) * (x' - mean) * (x' - mean) | x<-xs, let x' = fromIntegral x ]
+        var = sum [ (probs !! x) * (fromIntegral x - mean)^2 | x<-xs ]
+          where mean = (n-1) % 2 :: Float -- Mean of xs
         -- The expected variance is one of a fair n-sided die
-        expVar = fromIntegral (n*n-1) / 12 :: Float
+        expVar = (n*n-1) % 12
     when (abs (sum probs - 1) > 1e-6 || any (<0) probs || any (>1) probs) $
         error "Invalid probabilities!"
-    print histo
+    putStrLn $ show histo ++ " (expected ~" ++ show (reps * k % n) ++ ")"
     putStrLn $ "Variance: " ++ show var ++ " (expected ~" ++ show expVar ++ ")"
 
 -- A similar idea for reservoir sampling, with roughly the same execution,
