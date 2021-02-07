@@ -1,12 +1,13 @@
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 module ReservoirSampling
-  (ReservoirSampler, IOReservoirSampler, STReservoirSampler,
+  (ReservoirSampler, {-IOReservoirSampler, STReservoirSampler,-}
    newSamplerM, addSampleM, getSamplesM, unsafeGetSamplesM,
    reservoirSample, reservoirSampleIO, testReservoirDistr) where
 
 import Control.Monad (when,replicateM,replicateM_)
 import Control.Monad.Primitive (PrimMonad,PrimState,stToPrim)
-import Control.Monad.ST (runST)
+import Control.Monad.ST (ST,runST)
 import Data.Foldable (forM_)
 import Data.Function (on)
 import Data.STRef (STRef,newSTRef,readSTRef,writeSTRef)
@@ -24,43 +25,46 @@ infixl 7 % -- Same as (/)
 -- A reservoir sampler selects k values from a stream of an initially unknown, possibly
 -- huge size n in O(k) space, with a single pass over the stream, so that at any point
 -- each "consumed" value has an equal probability of being selected.
+class ReservoirSampler r where
+    -- Initializes a sampler's state with the first k values (as they are always added)
+    newSamplerM :: PrimMonad m => StdGen -> [a] -> m (r (PrimState m) a)
+    -- Adds a value to the sampler, modifying in-place the sampler's internal state
+    addSampleM :: PrimMonad m => r (PrimState m) a -> a -> m ()
+    -- Freezes the vector of currently selected k values
+    -- (safely or unsafely) and returns them as an immutable vector.
+    getSamplesM, unsafeGetSamplesM :: PrimMonad m => r (PrimState m) a -> m (Vector a)
 
 -- This is an optimized implementation of the "slow" O(n) Algorithm R.
 -- The currently sampled values are kept in a mutable vector, frozen only
 -- when accessed. Also keeps its state via a mutable reference, to
 -- achieve the same workflows for the sampler as a mutable vector itself.
-data ReservoirSampler s a = RS {  state :: STRef s (StdGen, Int)
-                               , values :: MVector s a }
+-- Invariant: the Int in the state is the 1-based index of the next value to be added.
+data LinearReservoirSampler s a = LRS {   state :: STRef s (StdGen, Int)
+                                      , samples :: MVector s a }
 -- User-friendly type aliases
-type IOReservoirSampler   = ReservoirSampler (PrimState IO)
-type STReservoirSampler s = ReservoirSampler s
+type IOLinearReservoirSampler   = LinearReservoirSampler (PrimState IO)
+type STLinearReservoirSampler s = LinearReservoirSampler s
 
--- Initializes a sampler's state & allocates memory for the values to be added
-newSamplerM :: PrimMonad m => StdGen -> [a] -> m (ReservoirSampler (PrimState m) a)
-newSamplerM gen firsts = do
-    values <- V.unsafeThaw $ V.fromList firsts
-    -- Invariant: the Int in the state is the 1-based index of the next value to be added.
-    state <- stToPrim $ newSTRef (gen, succ $ M.length values)
-    return $ RS state values
-
--- Adds a value to the sampler, modifying in-place both the inner array and the value's state.
-addSampleM :: PrimMonad m => ReservoirSampler (PrimState m) a -> a -> m ()
-addSampleM RS{ state, values } val = do
-    (gen, i) <- stToPrim $ readSTRef state
-    let k = M.length values
-        prob = k % i -- Probability of keeping this i-th sample
-        (x, gen') = random gen :: (Float, StdGen)
-    when (x < prob) $ do
-        -- Select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
-        let idx = floor $ x*(fromIntegral k)/prob
-        M.write values idx val
-    stToPrim $ writeSTRef state (gen', i+1)
-
--- Freezes the vector of currently selected k values
--- (safely or unsafely) and returns them as an immutable vector.
-getSamplesM, unsafeGetSamplesM :: PrimMonad m => ReservoirSampler (PrimState m) a -> m (Vector a)
-getSamplesM       = V.freeze . values
-unsafeGetSamplesM = V.unsafeFreeze . values
+instance ReservoirSampler LinearReservoirSampler where
+    newSamplerM :: PrimMonad m => StdGen -> [a] -> m (LinearReservoirSampler (PrimState m) a)
+    newSamplerM gen values = do
+        samples <- V.unsafeThaw $ V.fromList values
+        state <- stToPrim $ newSTRef (gen, succ $ M.length samples)
+        return $ LRS state samples
+    addSampleM :: PrimMonad m => LinearReservoirSampler (PrimState m) a -> a -> m ()
+    addSampleM LRS{ state, samples } val = do
+        (gen, i) <- stToPrim $ readSTRef state
+        let k = M.length samples
+            prob = k % i -- Probability of keeping this i-th sample
+            (x, gen') = random gen :: (Float, StdGen)
+        when (x < prob) $ do
+            -- Select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
+            let idx = floor $ x*(fromIntegral k)/prob
+            M.write samples idx val
+        stToPrim $ writeSTRef state (gen', i+1)
+    getSamplesM, unsafeGetSamplesM :: PrimMonad m => LinearReservoirSampler (PrimState m) a -> m (Vector a)
+    getSamplesM       = V.freeze . samples
+    unsafeGetSamplesM = V.unsafeFreeze . samples
 
 -- Uses reservoir sampling and a user-supplied random number
 -- generator to select k distinct values in [0;n).
@@ -68,7 +72,7 @@ unsafeGetSamplesM = V.unsafeFreeze . values
 -- in-place, freezes the result & returns it as a pure value.
 reservoirSample :: StdGen -> Int -> Int -> Vector Int
 reservoirSample gen k n = runST $ do
-    sampler <- newSamplerM gen [0..k-1]
+    sampler <- newSamplerM gen [0..k-1] :: ST s (LinearReservoirSampler s Int)
     forM_ [k..n-1] $ addSampleM sampler
     return =<< unsafeGetSamplesM sampler
 
