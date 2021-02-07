@@ -15,7 +15,7 @@ import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Vector.Mutable (MVector)
 import qualified Data.Vector.Mutable as M
-import System.Random (StdGen,random,newStdGen)
+import System.Random (StdGen,random,randomR,newStdGen)
 
 -- Utility function to take care of division between integer values
 (%) :: (Integral a, Fractional b) => a -> a -> b
@@ -158,9 +158,7 @@ instance ReservoirSampler FastReservoirSampler where
         when (i == next) $ do
             let k = M.length fsamples
                 (gen', next', w') = updateState k st
-                (x, gen'') = random gen' :: (Float, StdGen)
-                -- extrapolate from [0;1) to [0;k) to select the index of a value to overwrite
-                idx = floor $ fromIntegral k * x
+                (idx, gen'') = randomR (0, k-1) gen' :: (Int, StdGen)
             M.write fsamples idx val
             stToPrim $ writeSTRef fstate (gen'', next', w')
         -- Always bump the internal counter
@@ -171,13 +169,16 @@ instance ReservoirSampler FastReservoirSampler where
 
 -- Uses reservoir sampling and a user-supplied random number
 -- generator to select k distinct values in [0;n).
--- Pure function - creates a mutable sampler, modifies its contents
--- in-place, freezes the result & returns it as a pure value.
+-- Pure function - creates a mutable vector, modifies its contents
+-- in-place, freezes it & returns it as a pure value.
 fastReservoirSample :: StdGen -> Int -> Int -> Vector Int
-fastReservoirSample gen k n = runST $ do
-    sampler <- newSamplerM gen [0..k-1] :: ST s (FastReservoirSampler s Int)
-    forM_ [k..n-1] $ addSampleM sampler
-    return =<< unsafeGetSamplesM sampler
+fastReservoirSample gen k n = V.modify (loop $ updateState k (gen, k-1, 1)) $ V.enumFromN 0 k
+  where -- Actually runs in the ST monad (via runST)
+        loop :: PrimMonad m => (StdGen, Int, Float) -> MVector (PrimState m) Int -> m ()
+        loop (gen, i, w) mv = when (i < n) $ do
+            let (idx, gen') = randomR (0, k-1) gen :: (Int, StdGen)
+            M.write mv idx i
+            loop (updateState k (gen', i, w)) mv
 
 -- Same as above, but using the built-in global generator (split for subsequent usage).
 fastReservoirSampleIO :: Int -> Int -> IO (Vector Int)
