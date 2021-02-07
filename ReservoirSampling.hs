@@ -36,45 +36,31 @@ type IOReservoirSampler   = ReservoirSampler (PrimState IO)
 type STReservoirSampler s = ReservoirSampler s
 
 -- Initializes a sampler's state & allocates memory for the values to be added
-newSamplerM :: PrimMonad m => StdGen -> Int -> m (ReservoirSampler (PrimState m) a)
-newSamplerM gen k = do
+newSamplerM :: PrimMonad m => StdGen -> [a] -> m (ReservoirSampler (PrimState m) a)
+newSamplerM gen firsts = do
+    values <- V.unsafeThaw $ V.fromList firsts
     -- Invariant: the Int in the state is the 1-based index of the next value to be added.
-    state <- stToPrim $ newSTRef (gen, 1)
-    values <- M.new k
+    state <- stToPrim $ newSTRef (gen, succ $ M.length values)
     return $ RS state values
 
 -- Adds a value to the sampler, modifying in-place both the inner array and the value's state.
 addSampleM :: PrimMonad m => ReservoirSampler (PrimState m) a -> a -> m ()
 addSampleM RS{ state, values } val = do
-    let k = M.length values
     (gen, i) <- stToPrim $ readSTRef state
-    if i <= k
-    then do -- First k values are always selected
-        M.write values (i-1) val
-        stToPrim $ writeSTRef state (gen, i+1)
-    else do
-        let prob = k % i -- Probability of keeping this i-th sample
-            (x, gen') = random gen :: (Float, StdGen)
-        when (x < prob) $ do
-            -- Select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
-            let idx = floor $ x*(fromIntegral k)/prob
-            M.write values idx val
-        stToPrim $ writeSTRef state (gen', i+1)
+    let k = M.length values
+        prob = k % i -- Probability of keeping this i-th sample
+        (x, gen') = random gen :: (Float, StdGen)
+    when (x < prob) $ do
+        -- Select the index of a value to overwrite on random by extrapolating from [0;prob) to [0;k)
+        let idx = floor $ x*(fromIntegral k)/prob
+        M.write values idx val
+    stToPrim $ writeSTRef state (gen', i+1)
 
 -- Freezes the vector of currently selected k values
 -- (safely or unsafely) and returns them as an immutable vector.
 getSamplesM, unsafeGetSamplesM :: PrimMonad m => ReservoirSampler (PrimState m) a -> m (Vector a)
-getSamplesM       = getSamplesImpl V.freeze
-unsafeGetSamplesM = getSamplesImpl V.unsafeFreeze
-
--- Helper function for the two above
-getSamplesImpl :: PrimMonad m =>
-    (MVector (PrimState m) a -> m (Vector a)) -> ReservoirSampler (PrimState m) a -> m (Vector a)
-getSamplesImpl getter RS{ state, values } = do
-    let k = M.length values
-    (_, i) <- stToPrim $ readSTRef state
-    when (i <= k) $ error "Too few samples!"
-    return =<< getter values
+getSamplesM       = V.freeze . values
+unsafeGetSamplesM = V.unsafeFreeze . values
 
 -- Uses reservoir sampling and a user-supplied random number
 -- generator to select k distinct values in [0;n).
@@ -82,8 +68,8 @@ getSamplesImpl getter RS{ state, values } = do
 -- in-place, freezes the result & returns it as a pure value.
 reservoirSample :: StdGen -> Int -> Int -> Vector Int
 reservoirSample gen k n = runST $ do
-    sampler <- newSamplerM gen k
-    forM_ [0..n-1] $ addSampleM sampler
+    sampler <- newSamplerM gen [0..k-1]
+    forM_ [k..n-1] $ addSampleM sampler
     return =<< unsafeGetSamplesM sampler
 
 -- Same as above, but using the built-in global generator (split for subsequent usage).
