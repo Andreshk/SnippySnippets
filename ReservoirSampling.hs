@@ -117,6 +117,81 @@ testReservoirDistr reps k n = do
     samples <- replicateM reps $ reservoirSampleIO k n
     compareToUniformDistr n samples
 
+-- The "fast" sampler is supposed to implement the O(k*log(n/k)) Algorithm L,
+-- which is optimal for the task. It works by calculating the expected gaps
+-- between each successfully added value and discarding the values inbetween.
+-- It also draws only 3 random numbers for each of the O(k*log(n/k)) values
+-- added, instead of 1 for each of the n values that the linear sampler does.
+-- However, the current sequential ReservoirSampler interface forces attempting
+-- to add each value, without actually skipping the rest, resulting in O(n) again.
+data FastReservoirSampler s a = FRS {   fstate :: STRef s (StdGen, Int, Float)
+                                    ,     iRef :: STRef s Int
+                                    , fsamples :: MVector s a }
+-- User-friendly type aliases
+type IOFastReservoirSampler   = FastReservoirSampler (PrimState IO)
+type STFastReservoirSampler s = FastReservoirSampler s
+
+-- Helper function to update the fast sampler's internal state.
+-- Important: the random values (and generators) should not be
+-- reused - it leads to a skewed resulting distribution (!)
+updateState :: Int -> (StdGen, Int, Float) -> (StdGen, Int, Float)
+updateState k (gen, next, w) = (gen'', next', w')
+  where (x, gen') = random gen
+        w' = w * exp (log x / fromIntegral k)
+        (x', gen'') = random gen'
+        next' = next + floor (log x' / log (1-w')) + 1
+
+instance ReservoirSampler FastReservoirSampler where
+    newSamplerM :: PrimMonad m => StdGen -> [a] -> m (FastReservoirSampler (PrimState m) a)
+    newSamplerM gen values = do
+        samples <- V.unsafeThaw $ V.fromList values
+        let k = M.length samples
+        state <- stToPrim . newSTRef . updateState k $ (gen, k-1, 1)
+        iRef <- stToPrim $ newSTRef k
+        return $ FRS state iRef samples
+    addSampleM :: PrimMonad m => FastReservoirSampler (PrimState m) a -> a -> m ()
+    addSampleM FRS{ fstate, iRef, fsamples } val = do
+        i <- stToPrim $ readSTRef iRef
+        st@(gen, next, w) <- stToPrim $ readSTRef fstate
+        -- "Skipping" a value is actually O(n) => going through n values will execute
+        -- the code inside only O(k*log(n/k)) times, but the total time will be O(n) :/
+        when (i == next) $ do
+            let k = M.length fsamples
+                (gen', next', w') = updateState k st
+                (x, gen'') = random gen' :: (Float, StdGen)
+                -- extrapolate from [0;1) to [0;k) to select the index of a value to overwrite
+                idx = floor $ fromIntegral k * x
+            M.write fsamples idx val
+            stToPrim $ writeSTRef fstate (gen'', next', w')
+        -- Always bump the internal counter
+        stToPrim $ writeSTRef iRef (i+1)
+    getSamplesM, unsafeGetSamplesM :: PrimMonad m => FastReservoirSampler (PrimState m) a -> m (Vector a)
+    getSamplesM       = V.freeze . fsamples
+    unsafeGetSamplesM = V.unsafeFreeze . fsamples
+
+-- Uses reservoir sampling and a user-supplied random number
+-- generator to select k distinct values in [0;n).
+-- Pure function - creates a mutable sampler, modifies its contents
+-- in-place, freezes the result & returns it as a pure value.
+fastReservoirSample :: StdGen -> Int -> Int -> Vector Int
+fastReservoirSample gen k n = runST $ do
+    sampler <- newSamplerM gen [0..k-1] :: ST s (FastReservoirSampler s Int)
+    forM_ [k..n-1] $ addSampleM sampler
+    return =<< unsafeGetSamplesM sampler
+
+-- Same as above, but using the built-in global generator (split for subsequent usage).
+fastReservoirSampleIO :: Int -> Int -> IO (Vector Int)
+fastReservoirSampleIO k n = do
+    gen <- newStdGen
+    return $ fastReservoirSample gen k n
+
+-- Runs a simple, general case of unweighted reservoir
+-- sampling & evaluates the resulting distribution.
+testFastReservoirDistr :: Int -> Int -> Int -> IO ()
+testFastReservoirDistr reps k n = do
+    samples <- replicateM reps $ fastReservoirSampleIO k n
+    compareToUniformDistr n samples
+
 -- Weighted reservoir sampling - Wikipedia's flawed (!) version of
 -- Chao's algorithm. Roughly the same execution as the main algorithm,
 -- but much less generic & with more explicit state keeping.
