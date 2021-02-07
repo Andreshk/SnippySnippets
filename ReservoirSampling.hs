@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 module ReservoirSampling
   (reservoirSample, reservoirSampleIO, testReservoirDistr,
    fastReservoirSample, fastReservoirSampleIO, testFastReservoirDistr) where
@@ -78,14 +79,19 @@ fastReservoirSampleIO k n = do
     gen <- newStdGen
     return $ fastReservoirSample gen k n
 
+-- Allows for tesing of weighted & unweighted samplers via the function below
+class SamplerArg a where size :: a -> Int
+instance SamplerArg Int where size = id
+instance SamplerArg [Float] where size = length
+
 -- Evaluates the results from multiple runs of a reservoir sampler by counting
 -- how often each value was present in a sample. These counts are normalized
 -- to form a probability distribution function, whose variance is calculated
 -- and compared to the variance of a fair n-sided die (ideal distribution).
-compareToUniformDistr :: Int -> [Vector Int] -> IO ()
-compareToUniformDistr n samples = do
-    let reps = length samples
-        k = V.length $ head samples
+compareToUniformDistr :: SamplerArg a => (Int -> a -> IO (Vector Int)) -> Int -> Int -> a -> IO ()
+compareToUniformDistr sampler reps k arg = do
+    samples <- replicateM reps $ sampler k arg
+    let n = size arg
         xs = [0..n-1]
         histo = [ length . filter (elem x) $ samples | x<-xs ]
         -- Each x has an equal probability of k/n to be in the sample (making 1/n when normalized)
@@ -105,14 +111,12 @@ compareToUniformDistr n samples = do
 -- Runs a simple, general case of unweighted reservoir
 -- sampling & evaluates the resulting distribution.
 testReservoirDistr :: Int -> Int -> Int -> IO ()
-testReservoirDistr reps k n =
-    compareToUniformDistr n =<< (replicateM reps $ reservoirSampleIO k n)
+testReservoirDistr = compareToUniformDistr reservoirSampleIO
 
 -- Runs a simple, general case of unweighted reservoir
 -- sampling & evaluates the resulting distribution.
 testFastReservoirDistr :: Int -> Int -> Int -> IO ()
-testFastReservoirDistr reps k n =
-    compareToUniformDistr n =<< (replicateM reps $ fastReservoirSampleIO k n)
+testFastReservoirDistr = compareToUniformDistr fastReservoirSampleIO
 
 -- Weighted reservoir sampling - Wikipedia's flawed (!) version of Chao's algorithm
 weightedReservoirSample :: StdGen -> Int -> [Float] -> Vector Int
@@ -141,8 +145,7 @@ weightedReservoirSampleIO k weights = do
 -- Chao's algorithm is supposed to match the regular one when all the
 -- weights are identical (regardless if they add up to 1 or not).
 testWeighted :: Int -> Int -> Int -> IO ()
-testWeighted reps k n =
-    compareToUniformDistr n =<< (replicateM reps $ weightedReservoirSampleIO k weights)
+testWeighted reps k n = compareToUniformDistr weightedReservoirSampleIO reps k weights
   where weights = replicate n (1%n)
 
 {- Future reading (& to-do):
