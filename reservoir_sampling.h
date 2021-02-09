@@ -43,7 +43,7 @@ void reservoirSample(RandomGenerator&& rng, const InputRange& xs, OutputRange& s
 // each successfully added value and skipping over the remaining values.
 // It also draws only 3 random numbers for each of the O(k*log(n/k)) values
 // added, instead of 1 for each of the n values that the linear sampler does.
-// Again, samples from a given range to another, smaller preallocate one,
+// Again, samples from a given range to another, smaller preallocated one,
 // using a random generator for real numbers in [0;1).
 template <typename RandomGenerator,
           std::ranges::random_access_range InputRange,

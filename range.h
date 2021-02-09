@@ -45,7 +45,7 @@ public:
 		// (the requirements chain is random_access_iterator -> bidirectional_iterator
 		// -> forward_iterator -> incrementable -> weakly_incrementable -> default_initializable)
 		iterator() : curr{ 0 } {}
-		// Iterator values types should be non-const even for read-only containers
+		// Iterator value types should be non-const even for read-only containers
 		using value_type = T; 
 		using pointer    = const T*;
 		using reference  = const T&;
