@@ -1,11 +1,11 @@
-#include "Generator.h"
+#include <cppcoro/generator.hpp>
 #include <vector>
+#include <span>
 
 // Coroutine, generating all possible patterns for a cutting stock problem.
 // This, of course, is a minor step in the process of solving this problem.
 // Each pattern is identified by the number of occurences of each item.
-// Note: coroutine parameters must be passed by value (& this should've been an array view)
-Generator<std::vector<int>> cuttingStockPatternsGenerator(const int S, const std::vector<int> items) {
+cppcoro::generator<std::vector<int>> cuttingStockPatterns(const int S, std::span<const int> items) {
 	const int n = int(items.size());
 	std::vector<int> counts(n, 0); // Number of pieces of each item length in a given pattern
 	// This simple, inherently recursive process is transformed into an iterative one that keeps the
@@ -25,8 +25,7 @@ Generator<std::vector<int>> cuttingStockPatternsGenerator(const int S, const std
 				unwinding = false;
 			}
 		} else {
-			if (idx == n - 1) { // Recursion base - we've completed a pattern
-				// Return the current pattern to the callee before unwinding back
+			if (idx == n - 1) { // Recursion base - we've completed a pattern & will return it before unwinding back
 				co_yield counts;
 				S1 += counts[idx] * items[idx];
 				counts[idx] = 0; // Prepare for unwinding
@@ -40,11 +39,11 @@ Generator<std::vector<int>> cuttingStockPatternsGenerator(const int S, const std
 	}
 }
 
+
 /* Example usage:
-	Generator<std::vector<int>> patternsGen = cuttingStockPatternsGenerator(20, { 9,7,5 });
+	const std::vector<int> items{ 9,7,5 };
 	std::cout << "Cutting stock patterns:\n";
-	while (patternsGen.next()) {
-		const std::vector<int>& pat = *patternsGen;
+	for (const auto& pat : cuttingStockPatterns(20, items)) {
 		for (const int x : pat) { std::cout << x << ' '; }
 		// Compute whatever we need with the current pattern, f.e. the waste
 		const int waste = n - std::inner_product(items.begin(), items.end(), pat.begin(), 0);
