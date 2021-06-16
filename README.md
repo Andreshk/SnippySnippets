@@ -1,7 +1,7 @@
 # SnippySnippets
 A repository for random, useful or interesting code snippets &amp; experiments
 
-### ColoredOutput ([.ixx](https://github.com/Andreshk/SnippySnippets/blob/master/ColoredOutput.ixx), [.cpp](https://github.com/Andreshk/SnippySnippets/blob/master/ColoredOutput.cpp))
+### [ColoredOutput](https://github.com/Andreshk/SnippySnippets/blob/master/ColoredOutput.ixx)
 Small utility that enables colored output on Windows consoles that might not support it natively & offers a convenient enum class for basic color representation. This allows for type safety, modularization, extensibility & avoids printing garbage when colored output is not supported.
 ### [parallel_sort.h](https://github.com/Andreshk/SnippySnippets/blob/master/parallel_sort.h)
 Sorts by splitting the input into pieces, sorting the pieces individually (and simultaneously, in parallel) and and then also merging _in parallel_. Relies on `std::sort` and `std::inplace_merge` and only manages and organizes the multithreaded work. See [`impl::merge_threads()`](https://github.com/Andreshk/SnippySnippets/blob/master/parallel_sort.h#L116) for details.
