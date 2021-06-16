@@ -1,25 +1,12 @@
-// to-do: remove this when https://developercommunity.visualstudio.com/t/Exported-template-specialization-from-mo/1449269
-// is resolved & templates can be specialized in modules (!)
-#define MSVC_MODULES_BUG
-
-#ifndef MSVC_MODULES_BUG
 module; // headers like Windows.h can only be included in the global module fragment
-#endif
-
 // Include as little as possible from the Windows headers
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "Windows.h"
 
-#ifdef MSVC_MODULES_BUG
-#include "ColoredOutput.ixx"
-#include <cassert>
-#include <utility>
-#else
 module ColoredOutput;
 import <cassert>;
 import <utility>; // std::pair, for ColoredOutput::test() only
-#endif
 
 const char* toString(const Color c) {
     if (!ColoredOutput::enabled()) {
@@ -129,10 +116,10 @@ void ColoredOutput::test() {
     {
         std::cout << c << "test " << str << Color::Default << " end of test.\n";
         std::printf("%stest %s%s end of test.\n", toString(c), str, toString(Color::Default));
-        std::cout << std::format("{}test {}{} end of test.\n", c, str, Color::Default);
+        //std::cout << std::format("{}test {}{} end of test.\n", c, str, Color::Default);
 
         std::cout << c << Color::Bold << "test bright " << str << Color::Default << " end of test.\n";
         std::printf("%s%stest bright %s%s end of test.\n", toString(c), toString(Color::Bold), str, toString(Color::Default));
-        std::cout << std::format("{}{}test bright {}{} end of test.\n", c, Color::Bold, str, Color::Default);
+        //std::cout << std::format("{}{}test bright {}{} end of test.\n", c, Color::Bold, str, Color::Default);
     }
 }
