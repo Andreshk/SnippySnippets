@@ -73,7 +73,6 @@ export namespace ColoredOutput {
 // Implementations & helper functions below
 module :private;
 import <cassert>;
-import <utility>; // std::pair, for ColoredOutput::test() only
 
 const char* toString(const Color c) {
     if (!ColoredOutput::enabled()) {
@@ -107,13 +106,13 @@ bool hasVirtualTerminalSupport() {
     // Access ntdll.dll only once - the result won't change during program execution :)
     static const bool res = [] {
         const DWORD minMajorVersion = 10, minMinorVersion = 0, minBuildNumber = 10586;
-        const HMODULE module = GetModuleHandle(TEXT("ntdll.dll"));
-        if (!module) {
+        const HMODULE moduleHandle = GetModuleHandle(TEXT("ntdll.dll"));
+        if (!moduleHandle) {
             return false;
         }
         // To-do: fix includes so that NTSTATUS is defined (should be a typedef for LONG)
         typedef LONG/*NTSTATUS*/(WINAPI *RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
-        const RtlGetVersionPtr RtlGetVersion = reinterpret_cast<RtlGetVersionPtr>(GetProcAddress(module, "RtlGetVersion"));
+        const RtlGetVersionPtr RtlGetVersion = reinterpret_cast<RtlGetVersionPtr>(GetProcAddress(moduleHandle, "RtlGetVersion"));
         if (!RtlGetVersion) {
             return false;
         }
@@ -132,12 +131,6 @@ bool hasVirtualTerminalSupport() {
     return res;
 }
 
-// Whether an output handle has been redirected to a file, where color output is unsupported
-bool isRedirectedToFile(const HANDLE handle) {
-    return (handle != INVALID_HANDLE_VALUE
-        && (GetFinalPathNameByHandle(handle, nullptr, 0, 0) != 0 /*|| GetLastError() == ERROR_INSUFFICIENT_BUFFER*/));
-}
-
 // In case the macro is unavailable on the compiling machine
 #ifdef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 const DWORD virtualTerminalMask = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
@@ -150,19 +143,11 @@ const DWORD virtualTerminalMask = 0x0004;
 bool enableVirtualTerminal(const DWORD nHandle) {
     const HANDLE handle = GetStdHandle(nHandle);
     DWORD mode = 0;
-    return (!isRedirectedToFile(handle)
+    return (handle != INVALID_HANDLE_VALUE
+        && !GetFinalPathNameByHandle(handle, nullptr, 0, 0) // No color output if the output handle has been redirected to a file
         && GetConsoleMode(handle, &mode)
         && SetConsoleMode(handle, mode | virtualTerminalMask));
 };
-
-// Attempts to disable virtual terminal support for the given handle.
-bool disableVirtualTerminal(const DWORD nHandle) {
-    const HANDLE handle = GetStdHandle(nHandle);
-    assert(!isRedirectedToFile(handle));
-    DWORD mode = 0;
-    return (GetConsoleMode(handle, &mode)
-        && SetConsoleMode(handle, mode & (~virtualTerminalMask)));
-}
 
 bool ColoredOutput::enabled() {
     // No static initialization order fiasco here - all Color outputs go
@@ -174,7 +159,7 @@ bool ColoredOutput::enabled() {
 }
 
 void ColoredOutput::test() {
-    using P = std::pair<Color, const char*>;
+    struct P { Color c; const char* str; };
     for (const auto [c, str] : { P{Color::Red, "red"},
                                  P{Color::Yellow, "yellow"},
                                  P{Color::Green, "green"},
