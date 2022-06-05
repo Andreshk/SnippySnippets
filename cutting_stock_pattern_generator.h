@@ -26,7 +26,7 @@ cppcoro::recursive_generator<int> helper(const int S, std::span<const int> items
 } // namespace detail
 
 // Coroutine, employing the classic, recursive pattern generation technique.
-cppcoro::generator<std::vector<int>> cuttingStockPatternsRec(const int S, std::span<const int> items) {
+cppcoro::generator<std::span<const int>> cuttingStockPatternsRec(const int S, std::span<const int> items) {
 	std::vector<int> counts(items.size(), 0); // Number of pieces of each item length in a given pattern
 	// The helper signals each time a pattern is completed -> ignore its result & yield the pattern itself
 	for (auto _ : detail::helper(S, items, counts.begin())) {
@@ -37,7 +37,7 @@ cppcoro::generator<std::vector<int>> cuttingStockPatternsRec(const int S, std::s
 // An equivalent iterative process that keeps the current recursion "state"
 // in just three integers, resulting in much more efficient pattern generation
 // - no recursive coroutines & coroutine frame allocations, nothing.
-cppcoro::generator<std::vector<int>> cuttingStockPatterns(const int S, std::span<const int> items) {
+cppcoro::generator<std::span<const int>> cuttingStockPatterns(const int S, std::span<const int> items) {
 	const int n = int(items.size());
 	std::vector<int> counts(n, 0); // Number of pieces of each item length in a given pattern
 	int idx = -1; // Index of the current counter to be modified
@@ -70,7 +70,6 @@ cppcoro::generator<std::vector<int>> cuttingStockPatterns(const int S, std::span
 	}
 }
 
-
 /* Example usage:
 	const int n = 20;
 	const std::vector<int> items{ 9,7,5 };
@@ -82,5 +81,3 @@ cppcoro::generator<std::vector<int>> cuttingStockPatterns(const int S, std::span
 		std::cout << "(waste=" << waste << ")\n";
 	}
 */
-
-
