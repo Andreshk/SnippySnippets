@@ -1,6 +1,6 @@
 module TopoSort (topoSort) where
 import Graph
-import Control.Monad.State (StateT,execStateT,get,modify,lift)
+import Control.Monad.State (StateT,execStateT,get,modify,lift,unless)
 import Data.Foldable (for_)
 import Data.Vector (Vector,fromList,(!),(//))
 import qualified Data.Vector as V (length,replicate,elem,modify)
@@ -8,23 +8,20 @@ import Data.Vector.Mutable (write)
 import Test.HUnit (Test(TestList),runTestTT,(~:),(~?=))
 
 -- Vertices are colored during DFS to mark their state (unvisited/in process/visited)
-data Color = White | Gray | Black
-
--- Destructively update a vector (may be performed in-place)
-update :: Int -> a -> Vector a -> Vector a
-update idx val v = V.modify (\mv -> write mv idx val) v
+data Color = White | Gray | Black deriving Eq
 
 -- The most accurate representation of this process is StateT (<the actual state>) Maybe,
 -- i.e. a function that receives its arguments + state & may fail returning the value-new state pair.
 -- We also get MonadFail for free - this gives us the ability to pattern-match the result from get
 -- and the possibility for this match to fail if an earlier call returned Nothing.
 topoSort :: Graph -> Maybe (Vector Int)
-topoSort g = getSnd <$> execStateT (for_ [0..n-1] tryDFSVisit)
-                                   (V.replicate n White, V.replicate n 0, n-1)
+topoSort g = do
+    (colors, res, -1) <- execStateT topoSort' (V.replicate n White, V.replicate n 0, n-1)
+    unless (all (==Black) colors) $ error "Not all vertices visited..?"
+    return res
   where n = graphSize g
-        getSnd (_,x,_) = x
-        tryDFSVisit :: Int -> StateT (Vector Color, Vector Int, Int) Maybe ()
-        tryDFSVisit u = do
+        topoSort' :: StateT (Vector Color, Vector Int, Int) Maybe ()
+        topoSort' = for_ [0..n-1] $ \u -> do
             (colors, _, _) <- get
             case colors ! u of White -> dfsVisit u
                                Gray -> error "This shouldn't happen"
@@ -38,6 +35,9 @@ topoSort g = getSnd <$> execStateT (for_ [0..n-1] tryDFSVisit)
                                    Gray -> lift Nothing -- cycle found
                                    Black -> return ()
             modify $ \(colors, res, idx) -> (update u Black colors, update idx u res, idx-1)
+        -- Destructively update a vector (may be performed in-place)
+        update :: Int -> a -> Vector a -> Vector a
+        update idx val v = V.modify (\mv -> write mv idx val) v
 
 isValidSortFor :: Maybe (Vector Int) -> Graph -> Bool
 isValidSortFor Nothing _ = False
