@@ -7,27 +7,33 @@
 // Forward declaration - a bitset can contain only a power-of-2 number
 // of bits, corresponding to the size of a standard integral type or 128.
 // For 128 there is an explicit instantiation below the main one.
-template <size_t N>
+template <size_t N, typename Index = uint8_t>
     requires (N == 8 || N == 16 || N == 32 || N == 64 || N == 128)
 class StaticBitset;
 
+struct StaticBitsetSentinel {};
 // Use a copy of the bitset as an iterator to its values - NOT for direct use!
 // Dereferencing it returns the smallest value in the set, advancing removes said value from the set.
 // We can't get a smaller, more efficient iterator than this :)
-template <size_t N>
+template <size_t N, typename Index>
 class StaticBitsetIterator {
-    StaticBitset<N> b;
+    StaticBitset<N, Index> b;
     // Only a bitset can create iterators to itself
-    friend StaticBitset<N>;
-    StaticBitsetIterator(const StaticBitset<N>& b) : b{ b } {}
+    friend StaticBitset<N, Index>;
+    StaticBitsetIterator(const StaticBitset<N, Index>& b) : b{ b } {}
 public:
+    using value_type      = Index;
+    using reference_type  = value_type;
+    using difference_type = ptrdiff_t; // To appease std::weakly_incrementable
     StaticBitsetIterator() = default;
-    void operator++() noexcept { b.popFront(); }
-    auto operator*() const noexcept { return b.front(); }
+    StaticBitsetIterator& operator++() noexcept { b.popFront(); return *this; }
+    StaticBitsetIterator operator++(int) noexcept { auto copy = *this; ++*this; return copy; }
+    Index operator*() const noexcept { return b.front(); }
     bool operator==(const StaticBitsetIterator&) const noexcept = default;
+    bool operator==(StaticBitsetSentinel) const noexcept { return b.empty(); }
 };
 
-template <size_t N>
+template <size_t N, typename Index>
     requires (N == 8 || N == 16 || N == 32 || N == 64 || N == 128)
 class StaticBitset {
     // The standard unsigned integral type with N bits
@@ -37,7 +43,6 @@ class StaticBitset {
     static constexpr size_t numBits = sizeof(T) * CHAR_BIT;
     T data;
 public:
-    using Index = uint8_t;
     StaticBitset() : data{ 0 } {}
     StaticBitset(const StaticBitset&) = default;
     StaticBitset& operator=(const StaticBitset&) = default;
@@ -70,19 +75,18 @@ public:
     Index front() const noexcept { return Index(std::countr_zero(data)); }
     void popFront() noexcept { data &= (data - 1); }
     // Iteration-related methods
-    using iterator = StaticBitsetIterator<N>;
+    using iterator = StaticBitsetIterator<N, Index>;
     iterator begin() const noexcept { return { *this }; }
-    iterator end() const noexcept { return {}; }
+    StaticBitsetSentinel end() const noexcept { return {}; }
     // In case anyone needs to hash/compare sets
     bool operator==(const StaticBitset&) const noexcept = default;
     auto operator<=>(const StaticBitset&) const noexcept = default;
 };
 
-template <>
-class StaticBitset<128> {
+template <typename Index>
+class StaticBitset<128, Index> {
     uint64_t data[2];
 public:
-    using Index = uint8_t;
     StaticBitset() : data{ 0,0 } {}
     StaticBitset(const StaticBitset&) = default;
     StaticBitset& operator=(const StaticBitset&) = default;
@@ -125,9 +129,9 @@ public:
         data[data[0] == 0] &= (data[data[0] == 0] - 1); // lol
     }
     // Iteration-related methods
-    using iterator = StaticBitsetIterator<128>;
+    using iterator = StaticBitsetIterator<128, Index>;
     iterator begin() const noexcept { return { *this }; }
-    iterator end() const noexcept { return {}; }
+    StaticBitsetSentinel end() const noexcept { return {}; }
     // In case anyone needs to hash/compare sets
     bool operator==(const StaticBitset&) const noexcept = default;
     auto operator<=>(const StaticBitset&) const noexcept = default;
